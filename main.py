@@ -67,12 +67,12 @@ async def fetch_roblox_games_rolimons():
         print(f"[Rolimons] Error parsing game_details: {e}")
         return [], f"Error parsing game_details: {e}"
     games = []
-    for entry in game_details.values():
+    for game_id, entry in game_details.items():
         try:
             name = entry[0]
             players = entry[3]
             if players >= ROBLOX_MIN_PLAYERS:
-                games.append((name, players))
+                games.append((name, players, game_id))
         except Exception as e:
             print(f"[Rolimons] Error parsing entry: {e}")
             continue
@@ -93,8 +93,9 @@ async def fetch_roblox_games_roproxy():
                     for g in data.get("data", []):
                         name = g.get("name")
                         players = g.get("playing", 0)
-                        if name and players >= ROBLOX_MIN_PLAYERS:
-                            games.append((name, players))
+                        game_id = str(g.get("id")) if g.get("id") else None
+                        if name and players >= ROBLOX_MIN_PLAYERS and game_id:
+                            games.append((name, players, game_id))
                     return games, None
         except Exception as e:
             print(f"[roproxy] Attempt {attempt+1} failed: {e}")
@@ -123,13 +124,18 @@ async def fetch_roblox_games_discover():
     for div in soup.find_all("div", class_="game-card-container"):
         name_tag = div.find("span", class_="game-card-name")
         players_tag = div.find("span", class_="game-card-player-count")
-        if name_tag and players_tag:
+        link_tag = div.find("a", href=True)
+        if name_tag and players_tag and link_tag:
             name = name_tag.get_text(strip=True)
             players_text = players_tag.get_text(strip=True).replace(",", "")
+            href = link_tag["href"]
+            # Try to extract game id from URL
+            match = re.search(r"/games/(\d+)", href)
+            game_id = match.group(1) if match else None
             try:
                 players = int(players_text)
-                if players >= ROBLOX_MIN_PLAYERS:
-                    games.append((name, players))
+                if players >= ROBLOX_MIN_PLAYERS and game_id:
+                    games.append((name, players, game_id))
             except ValueError:
                 continue
     return games, None
@@ -151,8 +157,9 @@ async def fetch_roblox_games_explore_api():
                         for entry in sort.get("entries", []):
                             name = entry.get("name")
                             players = entry.get("playing", 0)
-                            if name and players >= ROBLOX_MIN_PLAYERS:
-                                games.append((name, players))
+                            game_id = str(entry.get("id")) if entry.get("id") else None
+                            if name and players >= ROBLOX_MIN_PLAYERS and game_id:
+                                games.append((name, players, game_id))
                     return games, None
         except Exception as e:
             print(f"[explore-api] Attempt {attempt+1} failed: {e}")
@@ -175,8 +182,9 @@ async def fetch_roblox_games_search_api():
                     for g in data.get("games", []):
                         name = g.get("name")
                         players = g.get("playing", 0)
-                        if name and players >= ROBLOX_MIN_PLAYERS:
-                            games.append((name, players))
+                        game_id = str(g.get("id")) if g.get("id") else None
+                        if name and players >= ROBLOX_MIN_PLAYERS and game_id:
+                            games.append((name, players, game_id))
                     return games, None
         except Exception as e:
             print(f"[search-api] Attempt {attempt+1} failed: {e}")
@@ -199,9 +207,9 @@ async def fetch_popular_roblox_games_smart(search: str, max_games: int):
         games, error = await fetcher()
         if games:
             sources.append(label)
-            for name, players in games:
+            for name, players, game_id in games:
                 if name not in seen and (not kw_list or smart_match(name, kw_list)):
-                    all_games.append((name, players))
+                    all_games.append((name, players, game_id))
                     seen.add(name)
         elif error:
             errors.append(f"{label}: {error}")
@@ -212,11 +220,7 @@ async def fetch_popular_roblox_games_smart(search: str, max_games: int):
     return all_games[:max_games], None, sources
 
 # --- Video Search APIs ---
-async def search_youtube_script_youtube_api(game_name):
-    # Placeholder: You can implement YouTube Data API logic here if you want
-    return None
-
-async def search_youtube_script_searchapi(game_name):
+async def search_youtube_script_searchapi(game_name, search_words=None):
     if not SEARCHAPI_IO_KEY:
         return None
     url = "https://www.searchapi.io/api/v1/search"
@@ -232,13 +236,18 @@ async def search_youtube_script_searchapi(game_name):
                     return None
                 data = await resp.json()
                 videos = data.get("videos", [])
-                if videos:
-                    v = videos[0]
+                for v in videos:
+                    title = v.get("title", "").lower()
+                    desc = v.get("description", "").lower() if v.get("description") else ""
+                    if "script" not in title and "script" not in desc:
+                        continue
+                    if search_words and not any(word in title or word in desc for word in search_words):
+                        continue
                     return (v.get("title"), v.get("link"))
     except Exception:
         return None
 
-async def search_youtube_script_serpapi(game_name):
+async def search_youtube_script_serpapi(game_name, search_words=None):
     if not SERPAPI_KEY:
         return None
     url = "https://serpapi.com/search.json"
@@ -255,12 +264,18 @@ async def search_youtube_script_serpapi(game_name):
                 data = await resp.json()
                 videos = data.get("video_results") or data.get("videos")
                 if videos:
-                    v = videos[0]
-                    return (v.get("title"), v.get("link"))
+                    for v in videos:
+                        title = v.get("title", "").lower()
+                        desc = v.get("description", "").lower() if v.get("description") else ""
+                        if "script" not in title and "script" not in desc:
+                            continue
+                        if search_words and not any(word in title or word in desc for word in search_words):
+                            continue
+                        return (v.get("title"), v.get("link"))
     except Exception:
         return None
 
-async def search_youtube_script_camideo(game_name):
+async def search_youtube_script_camideo(game_name, search_words=None):
     if not CAMIDEO_KEY:
         return None
     url = "http://api.camideo.com/"
@@ -278,13 +293,18 @@ async def search_youtube_script_camideo(game_name):
                     return None
                 data = await resp.json()
                 videos = data.get("Camideo", {}).get("videos", [])
-                if videos:
-                    v = videos[0]
+                for v in videos:
+                    title = v.get("title", "").lower()
+                    desc = v.get("description", "").lower() if v.get("description") else ""
+                    if "script" not in title and "script" not in desc:
+                        continue
+                    if search_words and not any(word in title or word in desc for word in search_words):
+                        continue
                     return (v.get("title"), v.get("link"))
     except Exception:
         return None
 
-async def search_youtube_script_duckduckgo(game_name):
+async def search_youtube_script_duckduckgo(game_name, search_words=None):
     url = "https://duckduckgo.com/?q=" + f"{game_name} script youtube video".replace(" ", "+")
     try:
         async with aiohttp.ClientSession() as session:
@@ -296,11 +316,22 @@ async def search_youtube_script_duckduckgo(game_name):
                 for a in soup.find_all("a", href=True):
                     href = a["href"]
                     if "youtube.com/watch" in href:
+                        text = a.get_text(strip=True).lower()
+                        if "script" not in text:
+                            continue
+                        if search_words and not any(word in text for word in search_words):
+                            continue
                         return (a.get_text(strip=True) or href, href)
     except Exception:
         return None
 
+async def search_youtube_script_youtube_api(game_name, search_words=None):
+    # Placeholder: You can implement YouTube Data API logic here if you want
+    return None
+
 async def search_youtube_script_all(game_name, max_videos):
+    # Extract search words from game_name (excluding 'script')
+    search_words = [w.lower() for w in game_name.replace('script', '').split() if w.strip()]
     results = []
     for func in [
         search_youtube_script_youtube_api,
@@ -311,7 +342,7 @@ async def search_youtube_script_all(game_name, max_videos):
     ]:
         if len(results) >= max_videos:
             break
-        result = await func(game_name)
+        result = await func(game_name + ' script', search_words)
         if result and result not in results:
             results.append(result)
     return results
@@ -355,11 +386,12 @@ async def findscripts(ctx, *, search: str, max_games: int = 10, max_videos: int 
         embed.title = f"🎮 Roblox Games Matching: {search}"
         embed.description = f"**Game sources:** {', '.join(sources)}\n**Search APIs:** {api_list}\n**Max games:** {max_games}\n**Max videos per game:** {max_videos}"
         embed.clear_fields()
-        for idx, (name, players) in enumerate(games):
-            field_name = f"{idx+1}. {name} ({players} players)"
+        for idx, (name, players, game_id) in enumerate(games):
+            game_url = f"https://www.roblox.com/games/{game_id}"
+            field_name = f"{idx+1}. [{name}]({game_url}) ({players} players)"
             embed.add_field(name=field_name, value="Searching...", inline=False)
         await msg.edit(embed=embed)
-        for idx, (name, players) in enumerate(games):
+        for idx, (name, players, game_id) in enumerate(games):
             embed.set_field_at(idx, name=embed.fields[idx].name, value="Searching...", inline=False)
             await msg.edit(embed=embed)
             results = await search_youtube_script_all(f"{name} {search} script", max_videos)
