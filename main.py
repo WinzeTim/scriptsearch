@@ -344,7 +344,10 @@ async def search_youtube_script_all(game_name, max_videos):
     name="findscripts",
     description="Find Roblox games and YouTube scripts by keywords."
 )
-async def findscripts(ctx: interactions.SlashContext, keywords: str, max_games: int = 10, max_videos: int = 1):
+async def findscripts(ctx: interactions.SlashContext):
+    keywords = ctx.kwargs.get("keywords")
+    max_games = ctx.kwargs.get("max_games", 10)
+    max_videos = ctx.kwargs.get("max_videos", 1)
     apis = []
     if youtube:
         apis.append("YouTube Data API")
