@@ -342,31 +342,7 @@ async def search_youtube_script_all(game_name, max_videos):
 # --- Discord Command with Live Progress ---
 @interactions.slash_command(
     name="findscripts",
-    description="Find Roblox games and YouTube scripts.",
-    options=[
-        interactions.Option(
-            name="keywords",
-            description="Keywords to search for (e.g. 'Grow a garden')",
-            type=interactions.OptionType.STRING,
-            required=True
-        ),
-        interactions.Option(
-            name="max_games",
-            description="Number of Roblox games to return (1-25)",
-            type=interactions.OptionType.INTEGER,
-            required=False,
-            min_value=1,
-            max_value=25
-        ),
-        interactions.Option(
-            name="max_videos",
-            description="Number of YouTube videos per game (1-5)",
-            type=interactions.OptionType.INTEGER,
-            required=False,
-            min_value=1,
-            max_value=5
-        )
-    ]
+    description="Find Roblox games and YouTube scripts. Usage: /findscripts keywords:<search> max_games:<1-25> max_videos:<1-5>"
 )
 async def findscripts(ctx: interactions.SlashContext, keywords: str, max_games: int = 10, max_videos: int = 1):
     apis = []
