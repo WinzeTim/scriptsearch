@@ -30,14 +30,20 @@ bot = interactions.Client(token=DISCORD_TOKEN)
 # Scrape Rolimons Game Table for popular games
 async def fetch_popular_roblox_games():
     url = "https://www.rolimons.com/gametable"
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as resp:
-            if resp.status != 200:
-                return []
-            html = await resp.text()
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    return None, f"Rolimons returned status {resp.status}"
+                html = await resp.text()
+    except Exception as e:
+        return None, f"Error fetching Rolimons: {e}"
     soup = BeautifulSoup(html, "html.parser")
     games = []
-    for row in soup.select("table#game-table > tbody > tr")[:10]:
+    table = soup.select_one("table#game-table > tbody")
+    if not table:
+        return None, "Could not find game table on Rolimons. The site structure may have changed."
+    for row in table.find_all("tr")[:10]:
         cols = row.find_all("td")
         if len(cols) < 3:
             continue
@@ -49,7 +55,9 @@ async def fetch_popular_roblox_games():
                 games.append((name, players))
         except ValueError:
             continue
-    return games
+    if not games:
+        return None, "No games found with enough players."
+    return games, None
 
 # --- Video Search APIs ---
 async def search_youtube_script_youtube_api(game_name):
@@ -174,18 +182,32 @@ async def search_youtube_script(game_name):
 # --- Discord Command with Live Progress ---
 @interactions.slash_command(name="findscripts", description="Find Roblox games and YouTube scripts.")
 async def findscripts(ctx: interactions.SlashContext):
+    # Determine which APIs are available
+    apis = []
+    if youtube:
+        apis.append("YouTube Data API")
+    if SEARCHAPI_IO_KEY:
+        apis.append("SearchApi.io")
+    if SERPAPI_KEY:
+        apis.append("SerpApi")
+    if CAMIDEO_KEY:
+        apis.append("Camideo")
+    apis.append("DuckDuckGo (fallback)")
+    api_list = ", ".join(apis)
     embed = interactions.Embed(
         title="🔍 Fetching popular Roblox games...",
-        description="Please wait while I gather data.",
+        description=f"**Using search APIs:** {api_list}\n\nPlease wait while I gather data.",
         color=0x00ff99
     )
     msg = await ctx.send(embeds=embed)
-    games = await fetch_popular_roblox_games()
+    games, error = await fetch_popular_roblox_games()
     if not games:
-        await ctx.send("❌ Failed to fetch game list.")
+        embed.title = "❌ Failed to fetch Roblox games"
+        embed.description = f"{error or 'Unknown error.'}"
+        await msg.edit(embeds=embed)
         return
     embed.title = "🎮 Popular Roblox Games + Script Videos"
-    embed.description = ""
+    embed.description = f"**Using search APIs:** {api_list}"
     embed.fields = []
     for idx, (name, players) in enumerate(games):
         field_name = f"{idx+1}. {name} ({players} players)"
@@ -203,7 +225,7 @@ async def findscripts(ctx: interactions.SlashContext):
             embed.fields[idx].value = "⚠️ No script video found."
         await msg.edit(embeds=embed)
         await asyncio.sleep(0.5)  # To avoid rate limits
-    embed.description = "Done!"
+    embed.description = f"**Using search APIs:** {api_list}\n\nDone!"
     await msg.edit(embeds=embed)
 
 # Run bot and web server
