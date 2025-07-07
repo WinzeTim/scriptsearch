@@ -283,7 +283,7 @@ async def on_ready():
     await bot.tree.sync()
     print(f"Logged in as {bot.user}")
 
-@bot.hybrid_command(name="findscripts", description="Find Roblox games and YouTube scripts by search phrase.")
+@bot.hybrid_command(name="findscripts", description="Find Roblox games and YouTube scripts by search phrase. v2")
 async def findscripts(ctx, *, search: str, max_games: int = 10, max_videos: int = 1):
     """
     Usage: /findscripts <search> [max_games] [max_videos]
