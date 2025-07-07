@@ -348,6 +348,9 @@ async def findscripts(ctx: interactions.SlashContext):
     keywords = ctx.kwargs.get("keywords")
     max_games = ctx.kwargs.get("max_games", 10)
     max_videos = ctx.kwargs.get("max_videos", 1)
+    if not keywords:
+        await ctx.send("❌ You must provide keywords to search for. Example: /findscripts keywords:'Grow a garden'", ephemeral=True)
+        return
     apis = []
     if youtube:
         apis.append("YouTube Data API")
