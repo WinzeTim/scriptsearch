@@ -293,13 +293,13 @@ def smart_match(game_name: str, keywords: List[str]) -> bool:
     name = game_name.lower()
     return all(any(kw in word for word in name.split()) or kw in name for kw in keywords)
 
-async def fetch_popular_roblox_games_smart(keywords: str, max_games: int):
+async def fetch_popular_roblox_games_smart(search: str, max_games: int):
     # Use all sources, combine, deduplicate, and filter by smart keyword match
     sources = []
     errors = []
     all_games = []
     seen = set()
-    kw_list = [k.lower() for k in keywords.split() if k.strip()]
+    kw_list = [k.lower() for k in search.split() if k.strip()]
     for fetcher, label in [
         (fetch_roblox_games_rolimons, "Rolimons"),
         (fetch_roblox_games_roproxy, "roproxy"),
@@ -342,15 +342,32 @@ async def search_youtube_script_all(game_name, max_videos):
 # --- Discord Command with Live Progress ---
 @interactions.slash_command(
     name="findscripts",
-    description="Find Roblox games and YouTube scripts by keywords."
+    description="Find Roblox games and YouTube scripts by search phrase."
 )
-async def findscripts(ctx: interactions.SlashContext):
-    keywords = ctx.kwargs.get("keywords")
-    max_games = ctx.kwargs.get("max_games", 10)
-    max_videos = ctx.kwargs.get("max_videos", 1)
-    if not keywords:
-        await ctx.send("❌ You must provide keywords to search for. Example: /findscripts keywords:'Grow a garden'", ephemeral=True)
-        return
+@interactions.option(
+    name="search",
+    description="What do you want to search for? (e.g. Grow a garden)",
+    type=str,
+    required=True
+)
+@interactions.option(
+    name="max_games",
+    description="Number of Roblox games to return (1-25)",
+    type=int,
+    required=False
+)
+@interactions.option(
+    name="max_videos",
+    description="Number of YouTube videos per game (1-5)",
+    type=int,
+    required=False
+)
+async def findscripts(
+    ctx: interactions.SlashContext,
+    search: str,
+    max_games: int = 10,
+    max_videos: int = 1
+):
     apis = []
     if youtube:
         apis.append("YouTube Data API")
@@ -363,18 +380,19 @@ async def findscripts(ctx: interactions.SlashContext):
     apis.append("DuckDuckGo (fallback)")
     api_list = ", ".join(apis)
     embed = interactions.Embed(
-        title=f"🔍 Searching for Roblox games with: {keywords}",
+        title=f"🔍 Searching for Roblox games with: {search}",
         description=f"**Using search APIs:** {api_list}\n**Max games:** {max_games}\n**Max videos per game:** {max_videos}\n\nPlease wait while I gather data.",
         color=0x00ff99
     )
     msg = await ctx.send(embeds=embed)
-    games, error, sources = await fetch_popular_roblox_games_smart(keywords, max_games)
+    # Use search.split() for keywords
+    games, error, sources = await fetch_popular_roblox_games_smart(search, max_games)
     if not games:
         embed.title = "❌ Failed to fetch Roblox games"
         embed.description = f"{error or 'Unknown error.'}"
         await msg.edit(embeds=embed)
         return
-    embed.title = f"🎮 Roblox Games Matching: {keywords}"
+    embed.title = f"🎮 Roblox Games Matching: {search}"
     embed.description = f"**Game sources:** {', '.join(sources)}\n**Search APIs:** {api_list}\n**Max games:** {max_games}\n**Max videos per game:** {max_videos}"
     embed.fields = []
     for idx, (name, players) in enumerate(games):
@@ -384,7 +402,7 @@ async def findscripts(ctx: interactions.SlashContext):
     for idx, (name, players) in enumerate(games):
         embed.fields[idx].value = "Searching..."
         await msg.edit(embeds=embed)
-        results = await search_youtube_script_all(f"{name} {keywords} script", max_videos)
+        results = await search_youtube_script_all(f"{name} {search} script", max_videos)
         if results:
             value = "\n".join([f"▶️ [{title}]({url})" for title, url in results])
             embed.fields[idx].value = value
