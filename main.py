@@ -50,7 +50,6 @@ def search_youtube_script(game_name):
         results.append((title, url))
     return results
 
-@bot.command()
 @interactions.slash_command(name="findscripts", description="Find Roblox games and script videos.")
 async def findscripts(ctx: interactions.SlashContext):
     await ctx.send("🔍 Fetching popular Roblox games...")
