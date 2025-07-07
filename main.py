@@ -278,55 +278,65 @@ async def search_youtube_script_all(game_name, max_videos):
     return results
 
 # --- Hybrid Command for Discord.py ---
+@bot.event
+async def on_ready():
+    await bot.tree.sync()
+    print(f"Logged in as {bot.user}")
+
 @bot.hybrid_command(name="findscripts", description="Find Roblox games and YouTube scripts by search phrase.")
 async def findscripts(ctx, *, search: str, max_games: int = 10, max_videos: int = 1):
     """
     Usage: /findscripts <search> [max_games] [max_videos]
     """
-    if not search:
-        await ctx.send("❌ You must provide a search phrase. Example: /findscripts Grow a garden", ephemeral=True)
-        return
-    apis = []
-    if SEARCHAPI_IO_KEY:
-        apis.append("SearchApi.io")
-    if SERPAPI_KEY:
-        apis.append("SerpApi")
-    if CAMIDEO_KEY:
-        apis.append("Camideo")
-    apis.append("DuckDuckGo (fallback)")
-    api_list = ", ".join(apis)
-    embed = discord.Embed(
-        title=f"🔍 Searching for Roblox games with: {search}",
-        description=f"**Using search APIs:** {api_list}\n**Max games:** {max_games}\n**Max videos per game:** {max_videos}\n\nPlease wait while I gather data.",
-        color=0x00ff99
-    )
-    msg = await ctx.send(embed=embed)
-    games, error, sources = await fetch_popular_roblox_games_smart(search, max_games)
-    if not games:
-        embed.title = "❌ Failed to fetch Roblox games"
-        embed.description = f"{error or 'Unknown error.'}"
+    try:
+        if not search:
+            await ctx.send("❌ You must provide a search phrase. Example: /findscripts Grow a garden", ephemeral=True)
+            return
+        apis = []
+        if SEARCHAPI_IO_KEY:
+            apis.append("SearchApi.io")
+        if SERPAPI_KEY:
+            apis.append("SerpApi")
+        if CAMIDEO_KEY:
+            apis.append("Camideo")
+        apis.append("DuckDuckGo (fallback)")
+        api_list = ", ".join(apis)
+        embed = discord.Embed(
+            title=f"🔍 Searching for Roblox games with: {search}",
+            description=f"**Using search APIs:** {api_list}\n**Max games:** {max_games}\n**Max videos per game:** {max_videos}\n\nPlease wait while I gather data.",
+            color=0x00ff99
+        )
+        msg = await ctx.send(embed=embed)
+        games, error, sources = await fetch_popular_roblox_games_smart(search, max_games)
+        if not games:
+            embed.title = "❌ Failed to fetch Roblox games"
+            embed.description = f"{error or 'Unknown error.'}"
+            await msg.edit(embed=embed)
+            return
+        embed.title = f"🎮 Roblox Games Matching: {search}"
+        embed.description = f"**Game sources:** {', '.join(sources)}\n**Search APIs:** {api_list}\n**Max games:** {max_games}\n**Max videos per game:** {max_videos}"
+        embed.clear_fields()
+        for idx, (name, players) in enumerate(games):
+            field_name = f"{idx+1}. {name} ({players} players)"
+            embed.add_field(name=field_name, value="Searching...", inline=False)
         await msg.edit(embed=embed)
-        return
-    embed.title = f"🎮 Roblox Games Matching: {search}"
-    embed.description = f"**Game sources:** {', '.join(sources)}\n**Search APIs:** {api_list}\n**Max games:** {max_games}\n**Max videos per game:** {max_videos}"
-    embed.clear_fields()
-    for idx, (name, players) in enumerate(games):
-        field_name = f"{idx+1}. {name} ({players} players)"
-        embed.add_field(name=field_name, value="Searching...", inline=False)
-    await msg.edit(embed=embed)
-    for idx, (name, players) in enumerate(games):
-        embed.set_field_at(idx, name=embed.fields[idx].name, value="Searching...", inline=False)
+        for idx, (name, players) in enumerate(games):
+            embed.set_field_at(idx, name=embed.fields[idx].name, value="Searching...", inline=False)
+            await msg.edit(embed=embed)
+            results = await search_youtube_script_all(f"{name} {search} script", max_videos)
+            if results:
+                value = "\n".join([f"▶️ [{title}]({url})" for title, url in results])
+                embed.set_field_at(idx, name=embed.fields[idx].name, value=value, inline=False)
+            else:
+                embed.set_field_at(idx, name=embed.fields[idx].name, value="⚠️ No script video found.", inline=False)
+            await msg.edit(embed=embed)
+            await asyncio.sleep(0.5)
+        embed.description = f"**Game sources:** {', '.join(sources)}\n**Search APIs:** {api_list}\n**Max games:** {max_games}\n**Max videos per game:** {max_videos}\n\nDone!"
         await msg.edit(embed=embed)
-        results = await search_youtube_script_all(f"{name} {search} script", max_videos)
-        if results:
-            value = "\n".join([f"▶️ [{title}]({url})" for title, url in results])
-            embed.set_field_at(idx, name=embed.fields[idx].name, value=value, inline=False)
-        else:
-            embed.set_field_at(idx, name=embed.fields[idx].name, value="⚠️ No script video found.", inline=False)
-        await msg.edit(embed=embed)
-        await asyncio.sleep(0.5)
-    embed.description = f"**Game sources:** {', '.join(sources)}\n**Search APIs:** {api_list}\n**Max games:** {max_games}\n**Max videos per game:** {max_videos}\n\nDone!"
-    await msg.edit(embed=embed)
+    except Exception as e:
+        await ctx.send(f"❌ An error occurred: {e}", ephemeral=True)
+        import traceback
+        print(traceback.format_exc())
 
 # Run bot and web server
 
