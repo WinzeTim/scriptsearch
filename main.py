@@ -342,7 +342,7 @@ async def search_youtube_script_all(game_name, max_videos):
 # --- Discord Command with Live Progress ---
 @interactions.slash_command(
     name="findscripts",
-    description="Find Roblox games and YouTube scripts. Usage: /findscripts keywords:<search> max_games:<1-25> max_videos:<1-5>"
+    description="Find Roblox games and YouTube scripts by keywords."
 )
 async def findscripts(ctx: interactions.SlashContext, keywords: str, max_games: int = 10, max_videos: int = 1):
     apis = []
