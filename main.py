@@ -8,6 +8,7 @@ from discord.ext import commands
 import asyncio
 import uuid
 from typing import List
+import re  # Add this import for regex parsing
 
 # Environment variables
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -36,59 +37,87 @@ async def fetch_roblox_games_rolimons():
     url = "https://www.rolimons.com/gametable"
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    return [], f"Rolimons returned status {resp.status}"
-                html = await resp.text()
+            for attempt in range(3):  # Retry logic
+                try:
+                    async with session.get(url) as resp:
+                        if resp.status != 200:
+                            print(f"[Rolimons] HTTP status: {resp.status}")
+                            await asyncio.sleep(1)
+                            continue
+                        html = await resp.text()
+                        break
+                except Exception as e:
+                    print(f"[Rolimons] Attempt {attempt+1} failed: {e}")
+                    await asyncio.sleep(1)
+            else:
+                return [], "Rolimons: Failed after 3 attempts."
     except Exception as e:
+        print(f"[Rolimons] Error fetching: {e}")
         return [], f"Error fetching Rolimons: {e}"
-    soup = BeautifulSoup(html, "html.parser")
+    # Parse the JS variable game_details
+    match = re.search(r"var game_details = (\{.*?\});", html, re.DOTALL)
+    if not match:
+        print("[Rolimons] Could not find game_details JS variable.")
+        return [], "Could not find game_details on Rolimons. The site structure may have changed."
+    try:
+        import json
+        # The JS object uses double quotes, so it's valid JSON
+        game_details = json.loads(match.group(1))
+    except Exception as e:
+        print(f"[Rolimons] Error parsing game_details: {e}")
+        return [], f"Error parsing game_details: {e}"
     games = []
-    table = soup.select_one("table#game-table > tbody")
-    if not table:
-        return [], "Could not find game table on Rolimons. The site structure may have changed."
-    for row in table.find_all("tr")[:20]:
-        cols = row.find_all("td")
-        if len(cols) < 3:
-            continue
-        name = cols[1].get_text(strip=True)
-        players_text = cols[2].get_text(strip=True).replace(",", "")
+    for entry in game_details.values():
         try:
-            players = int(players_text)
+            name = entry[0]
+            players = entry[3]
             if players >= ROBLOX_MIN_PLAYERS:
                 games.append((name, players))
-        except ValueError:
+        except Exception as e:
+            print(f"[Rolimons] Error parsing entry: {e}")
             continue
     return games, None
 
 async def fetch_roblox_games_roproxy():
     url = "https://games.roproxy.com/v1/games/list?sortToken=&sortOrder=Asc&limit=20"
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    return [], f"roproxy returned status {resp.status}"
-                data = await resp.json()
-                games = []
-                for g in data.get("data", []):
-                    name = g.get("name")
-                    players = g.get("playing", 0)
-                    if name and players >= ROBLOX_MIN_PLAYERS:
-                        games.append((name, players))
-                return games, None
-    except Exception as e:
-        return [], f"Error fetching roproxy: {e}"
+    for attempt in range(3):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        print(f"[roproxy] HTTP status: {resp.status}")
+                        await asyncio.sleep(1)
+                        continue
+                    data = await resp.json()
+                    games = []
+                    for g in data.get("data", []):
+                        name = g.get("name")
+                        players = g.get("playing", 0)
+                        if name and players >= ROBLOX_MIN_PLAYERS:
+                            games.append((name, players))
+                    return games, None
+        except Exception as e:
+            print(f"[roproxy] Attempt {attempt+1} failed: {e}")
+            await asyncio.sleep(1)
+    return [], "roproxy: Failed after 3 attempts or network error."
 
 async def fetch_roblox_games_discover():
     url = "https://www.roblox.com/discover"
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    return [], f"roblox.com/discover returned status {resp.status}"
-                html = await resp.text()
-    except Exception as e:
-        return [], f"Error fetching roblox.com/discover: {e}"
+    for attempt in range(3):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        print(f"[roblox.com/discover] HTTP status: {resp.status}")
+                        await asyncio.sleep(1)
+                        continue
+                    html = await resp.text()
+                    break
+        except Exception as e:
+            print(f"[roblox.com/discover] Attempt {attempt+1} failed: {e}")
+            await asyncio.sleep(1)
+    else:
+        return [], "roblox.com/discover: Failed after 3 attempts."
     soup = BeautifulSoup(html, "html.parser")
     games = []
     for div in soup.find_all("div", class_="game-card-container"):
@@ -108,41 +137,51 @@ async def fetch_roblox_games_discover():
 async def fetch_roblox_games_explore_api():
     session_id = str(uuid.uuid4())
     url = f"https://apis.roblox.com/explore-api/v1/get-sorts?sessionId={session_id}&device=computer&country=all"
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    return [], f"explore-api returned status {resp.status}"
-                data = await resp.json()
-                games = []
-                for sort in data.get("sorts", []):
-                    for entry in sort.get("entries", []):
-                        name = entry.get("name")
-                        players = entry.get("playing", 0)
-                        if name and players >= ROBLOX_MIN_PLAYERS:
-                            games.append((name, players))
-                return games, None
-    except Exception as e:
-        return [], f"Error fetching explore-api: {e}"
+    for attempt in range(3):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        print(f"[explore-api] HTTP status: {resp.status}")
+                        await asyncio.sleep(1)
+                        continue
+                    data = await resp.json()
+                    games = []
+                    for sort in data.get("sorts", []):
+                        for entry in sort.get("entries", []):
+                            name = entry.get("name")
+                            players = entry.get("playing", 0)
+                            if name and players >= ROBLOX_MIN_PLAYERS:
+                                games.append((name, players))
+                    return games, None
+        except Exception as e:
+            print(f"[explore-api] Attempt {attempt+1} failed: {e}")
+            await asyncio.sleep(1)
+    return [], "explore-api: Failed after 3 attempts or network error."
 
 async def fetch_roblox_games_search_api():
     session_id = str(uuid.uuid4())
     url = f"https://apis.roblox.com/search-api/omni-search?searchQuery=roblox&sessionId={session_id}"
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    return [], f"search-api returned status {resp.status}"
-                data = await resp.json()
-                games = []
-                for g in data.get("games", []):
-                    name = g.get("name")
-                    players = g.get("playing", 0)
-                    if name and players >= ROBLOX_MIN_PLAYERS:
-                        games.append((name, players))
-                return games, None
-    except Exception as e:
-        return [], f"Error fetching search-api: {e}"
+    for attempt in range(3):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        print(f"[search-api] HTTP status: {resp.status}")
+                        await asyncio.sleep(1)
+                        continue
+                    data = await resp.json()
+                    games = []
+                    for g in data.get("games", []):
+                        name = g.get("name")
+                        players = g.get("playing", 0)
+                        if name and players >= ROBLOX_MIN_PLAYERS:
+                            games.append((name, players))
+                    return games, None
+        except Exception as e:
+            print(f"[search-api] Attempt {attempt+1} failed: {e}")
+            await asyncio.sleep(1)
+    return [], "search-api: Failed after 3 attempts or network error."
 
 async def fetch_popular_roblox_games_smart(search: str, max_games: int):
     sources = []
