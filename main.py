@@ -9,6 +9,10 @@ import asyncio
 import uuid
 from typing import List
 import re  # Add this import for regex parsing
+import difflib  # For fuzzy matching
+from datetime import datetime, timedelta
+# Helper for advanced fuzzy matching and scoring
+from difflib import SequenceMatcher
 
 # Environment variables
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -220,58 +224,137 @@ async def fetch_popular_roblox_games_smart(search: str, max_games: int):
     return all_games[:max_games], None, sources
 
 # --- Video Search APIs ---
+def smart_video_score(title, desc, tags, search_words, published=None):
+    # Score based on keyword match, fuzzy match, recency, and penalize clickbait
+    score = 0.0
+    text = f"{title} {desc} {tags}".lower()
+    # Keyword match
+    for word in search_words:
+        if word in text:
+            score += 1.0
+    # Fuzzy match
+    for word in search_words:
+        for field in [title, desc, tags]:
+            score += SequenceMatcher(None, word, field).ratio()
+    # Recency bonus (if published date available)
+    if published:
+        try:
+            pub_date = datetime.strptime(published[:10], "%Y-%m-%d")
+            if pub_date > datetime.now() - timedelta(days=180):
+                score += 1.5  # Bonus for last 6 months
+            elif pub_date > datetime.now() - timedelta(days=365):
+                score += 0.5  # Bonus for last year
+        except Exception:
+            pass
+    # Penalize clickbait/unwanted words
+    for bad in ["scam", "fake", "virus", "robux generator", "free robux"]:
+        if bad in text:
+            score -= 2.0
+    return score
+
 async def search_youtube_script_searchapi(game_name, search_words=None):
     if not SEARCHAPI_IO_KEY:
         return None
     url = "https://www.searchapi.io/api/v1/search"
-    params = {
-        "engine": "youtube",
-        "q": f"{game_name} script",
-        "api_key": SEARCHAPI_IO_KEY
-    }
+    # Expanded query variations
+    queries = [
+        f"{game_name} script",
+        f"script for {game_name}",
+        f"{game_name} hack script",
+        f"{game_name} exploit",
+        f"{game_name} pastebin",
+        f"{game_name} working script",
+        f"{game_name} gui",
+        f"{game_name} auto farm",
+        f"{game_name} loadstring",
+        f"{game_name} op script",
+        f"{game_name} injector",
+        f"{game_name} undetected script",
+        f"{game_name} no key script",
+        f"{game_name} 2024 script",
+        f"{game_name} latest script"
+    ]
+    all_results = []
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params) as resp:
-                if resp.status != 200:
-                    return None
-                data = await resp.json()
-                videos = data.get("videos", [])
-                for v in videos:
-                    title = v.get("title", "").lower()
-                    desc = v.get("description", "").lower() if v.get("description") else ""
-                    if "script" not in title and "script" not in desc:
+            for q in queries:
+                params = {
+                    "engine": "youtube",
+                    "q": q,
+                    "api_key": SEARCHAPI_IO_KEY
+                }
+                async with session.get(url, params=params) as resp:
+                    if resp.status != 200:
                         continue
-                    if search_words and not any(word in title or word in desc for word in search_words):
-                        continue
-                    return (v.get("title"), v.get("link"))
+                    data = await resp.json()
+                    videos = data.get("videos", [])[:15]  # Check top 15
+                    for v in videos:
+                        title = v.get("title", "").lower()
+                        desc = v.get("description", "").lower() if v.get("description") else ""
+                        tags = ' '.join(v.get("keywords", [])).lower() if v.get("keywords") else ""
+                        published = v.get("published", "")
+                        # Must have 'script' in title, desc, or tags
+                        if "script" not in title and "script" not in desc and "script" not in tags:
+                            continue
+                        score = smart_video_score(title, desc, tags, search_words or [], published)
+                        all_results.append((score, v.get("title"), v.get("link")))
+        if not all_results:
+            return None
+        all_results.sort(reverse=True)
+        # Return the best result
+        return (all_results[0][1], all_results[0][2])
     except Exception:
         return None
 
+# Apply similar smart logic to other sources
 async def search_youtube_script_serpapi(game_name, search_words=None):
     if not SERPAPI_KEY:
         return None
     url = "https://serpapi.com/search.json"
-    params = {
-        "engine": "youtube",
-        "search_query": f"{game_name} script",
-        "api_key": SERPAPI_KEY
-    }
+    queries = [
+        f"{game_name} script",
+        f"script for {game_name}",
+        f"{game_name} hack script",
+        f"{game_name} exploit",
+        f"{game_name} pastebin",
+        f"{game_name} working script",
+        f"{game_name} gui",
+        f"{game_name} auto farm",
+        f"{game_name} loadstring",
+        f"{game_name} op script",
+        f"{game_name} injector",
+        f"{game_name} undetected script",
+        f"{game_name} no key script",
+        f"{game_name} 2024 script",
+        f"{game_name} latest script"
+    ]
+    all_results = []
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params) as resp:
-                if resp.status != 200:
-                    return None
-                data = await resp.json()
-                videos = data.get("video_results") or data.get("videos")
-                if videos:
-                    for v in videos:
+            for q in queries:
+                params = {
+                    "engine": "youtube",
+                    "search_query": q,
+                    "api_key": SERPAPI_KEY
+                }
+                async with session.get(url, params=params) as resp:
+                    if resp.status != 200:
+                        continue
+                    data = await resp.json()
+                    videos = data.get("video_results") or data.get("videos") or []
+                    for v in videos[:15]:
                         title = v.get("title", "").lower()
                         desc = v.get("description", "").lower() if v.get("description") else ""
+                        tags = ''
+                        published = v.get("published", "")
                         if "script" not in title and "script" not in desc:
                             continue
-                        if search_words and not any(word in title or word in desc for word in search_words):
-                            continue
-                        return (v.get("title"), v.get("link"))
+                        score = smart_video_score(title, desc, tags, search_words or [], published)
+                        all_results.append((score, v.get("title"), v.get("link")))
+        if not all_results:
+            return None
+        all_results.sort(reverse=True)
+        return (all_results[0][1], all_results[0][2])
     except Exception:
         return None
 
@@ -279,49 +362,86 @@ async def search_youtube_script_camideo(game_name, search_words=None):
     if not CAMIDEO_KEY:
         return None
     url = "http://api.camideo.com/"
-    params = {
-        "key": CAMIDEO_KEY,
-        "q": f"{game_name} script",
-        "source": "youtube",
-        "page": 1,
-        "response": "json"
-    }
+    queries = [
+        f"{game_name} script",
+        f"script for {game_name}",
+        f"{game_name} hack script",
+        f"{game_name} exploit",
+        f"{game_name} pastebin",
+        f"{game_name} working script",
+        f"{game_name} gui",
+        f"{game_name} auto farm",
+        f"{game_name} loadstring",
+        f"{game_name} op script",
+        f"{game_name} injector",
+        f"{game_name} undetected script",
+        f"{game_name} no key script",
+        f"{game_name} 2024 script",
+        f"{game_name} latest script"
+    ]
+    all_results = []
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params) as resp:
-                if resp.status != 200:
-                    return None
-                data = await resp.json()
-                videos = data.get("Camideo", {}).get("videos", [])
-                for v in videos:
-                    title = v.get("title", "").lower()
-                    desc = v.get("description", "").lower() if v.get("description") else ""
-                    if "script" not in title and "script" not in desc:
+            for q in queries:
+                params = {
+                    "key": CAMIDEO_KEY,
+                    "q": q,
+                    "source": "youtube",
+                    "page": 1,
+                    "response": "json"
+                }
+                async with session.get(url, params=params) as resp:
+                    if resp.status != 200:
                         continue
-                    if search_words and not any(word in title or word in desc for word in search_words):
-                        continue
-                    return (v.get("title"), v.get("link"))
+                    data = await resp.json()
+                    videos = data.get("Camideo", {}).get("videos", [])
+                    for v in videos[:15]:
+                        title = v.get("title", "").lower()
+                        desc = v.get("description", "").lower() if v.get("description") else ""
+                        tags = ''
+                        published = v.get("published", "")
+                        if "script" not in title and "script" not in desc:
+                            continue
+                        score = smart_video_score(title, desc, tags, search_words or [], published)
+                        all_results.append((score, v.get("title"), v.get("link")))
+        if not all_results:
+            return None
+        all_results.sort(reverse=True)
+        return (all_results[0][1], all_results[0][2])
     except Exception:
         return None
 
 async def search_youtube_script_duckduckgo(game_name, search_words=None):
-    url = "https://duckduckgo.com/?q=" + f"{game_name} script youtube video".replace(" ", "+")
+    queries = [
+        f"{game_name} script youtube video",
+        f"script for {game_name} youtube video",
+        f"{game_name} hack script youtube video",
+        f"{game_name} exploit youtube video",
+        f"{game_name} pastebin youtube video",
+        f"{game_name} working script youtube video"
+    ]
+    all_results = []
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    return None
-                html = await resp.text()
-                soup = BeautifulSoup(html, "html.parser")
-                for a in soup.find_all("a", href=True):
-                    href = a["href"]
-                    if "youtube.com/watch" in href:
-                        text = a.get_text(strip=True).lower()
-                        if "script" not in text:
-                            continue
-                        if search_words and not any(word in text for word in search_words):
-                            continue
-                        return (a.get_text(strip=True) or href, href)
+            for q in queries:
+                url = "https://duckduckgo.com/?q=" + q.replace(" ", "+")
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        continue
+                    html = await resp.text()
+                    soup = BeautifulSoup(html, "html.parser")
+                    for a in soup.find_all("a", href=True):
+                        href = a["href"]
+                        if "youtube.com/watch" in href:
+                            text = a.get_text(strip=True).lower()
+                            if "script" not in text:
+                                continue
+                            score = smart_video_score(text, '', '', search_words or [])
+                            all_results.append((score, a.get_text(strip=True) or href, href))
+        if not all_results:
+            return None
+        all_results.sort(reverse=True)
+        return (all_results[0][1], all_results[0][2])
     except Exception:
         return None
 
@@ -329,10 +449,63 @@ async def search_youtube_script_youtube_api(game_name, search_words=None):
     # Placeholder: You can implement YouTube Data API logic here if you want
     return None
 
+async def fallback_web_search(game_name, search_words=None):
+    # Try Google and Reddit for script links/videos
+    queries = [
+        f'site:youtube.com {game_name} script',
+        f'site:pastebin.com {game_name} script',
+        f'site:reddit.com {game_name} script',
+        f'{game_name} script roblox',
+        f'{game_name} script v3rmillion',
+    ]
+    all_results = []
+    try:
+        async with aiohttp.ClientSession() as session:
+            for q in queries:
+                # Google search
+                google_url = f'https://www.google.com/search?q={q.replace(" ", "+")}'
+                headers = {'User-Agent': 'Mozilla/5.0'}
+                async with session.get(google_url, headers=headers) as resp:
+                    if resp.status != 200:
+                        continue
+                    html = await resp.text()
+                    soup = BeautifulSoup(html, 'html.parser')
+                    for a in soup.find_all('a', href=True):
+                        href = a['href']
+                        if 'youtube.com/watch' in href or 'pastebin.com/' in href:
+                            text = a.get_text(strip=True).lower()
+                            if 'script' not in text:
+                                continue
+                            score = smart_video_score(text, '', '', search_words or [])
+                            all_results.append((score, a.get_text(strip=True) or href, href))
+                # Reddit search
+                reddit_url = f'https://www.reddit.com/search/?q={q.replace(" ", "+")}'
+                async with session.get(reddit_url, headers=headers) as resp:
+                    if resp.status != 200:
+                        continue
+                    html = await resp.text()
+                    soup = BeautifulSoup(html, 'html.parser')
+                    for a in soup.find_all('a', href=True):
+                        href = a['href']
+                        if 'youtube.com/watch' in href or 'pastebin.com/' in href:
+                            text = a.get_text(strip=True).lower()
+                            if 'script' not in text:
+                                continue
+                            score = smart_video_score(text, '', '', search_words or [])
+                            all_results.append((score, a.get_text(strip=True) or href, href))
+        if not all_results:
+            return None
+        all_results.sort(reverse=True)
+        return (all_results[0][1], all_results[0][2])
+    except Exception:
+        return None
+
 async def search_youtube_script_all(game_name, max_videos):
     # Extract search words from game_name (excluding 'script')
     search_words = [w.lower() for w in game_name.replace('script', '').split() if w.strip()]
     results = []
+    seen_links = set()
+    all_candidates = []
     for func in [
         search_youtube_script_youtube_api,
         search_youtube_script_searchapi,
@@ -340,12 +513,19 @@ async def search_youtube_script_all(game_name, max_videos):
         search_youtube_script_camideo,
         search_youtube_script_duckduckgo
     ]:
-        if len(results) >= max_videos:
-            break
-        result = await func(game_name + ' script', search_words)
-        if result and result not in results:
-            results.append(result)
-    return results
+        candidates = []
+        for _ in range(max_videos):
+            result = await func(game_name + ' script', search_words)
+            if result and result[1] not in seen_links:
+                candidates.append(result)
+                seen_links.add(result[1])
+        all_candidates.extend(candidates)
+    # If no results, try fallback web search
+    if not all_candidates:
+        fallback = await fallback_web_search(game_name, search_words)
+        if fallback:
+            all_candidates.append(fallback)
+    return all_candidates[:max_videos]
 
 # --- Hybrid Command for Discord.py ---
 @bot.event
