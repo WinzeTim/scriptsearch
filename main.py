@@ -344,24 +344,6 @@ async def search_youtube_script_all(game_name, max_videos):
     name="findscripts",
     description="Find Roblox games and YouTube scripts by search phrase."
 )
-@interactions.option(
-    name="search",
-    description="What do you want to search for? (e.g. Grow a garden)",
-    type=str,
-    required=True
-)
-@interactions.option(
-    name="max_games",
-    description="Number of Roblox games to return (1-25)",
-    type=int,
-    required=False
-)
-@interactions.option(
-    name="max_videos",
-    description="Number of YouTube videos per game (1-5)",
-    type=int,
-    required=False
-)
 async def findscripts(
     ctx: interactions.SlashContext,
     search: str,
