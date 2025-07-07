@@ -10,3 +10,6 @@ services:
         sync: false
       - key: YOUTUBE_API_KEY
         sync: false
+    build:
+      environment:
+        pythonVersion: 3.11.9
