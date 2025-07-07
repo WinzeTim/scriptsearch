@@ -344,12 +344,11 @@ async def search_youtube_script_all(game_name, max_videos):
     name="findscripts",
     description="Find Roblox games and YouTube scripts by search phrase."
 )
-async def findscripts(
-    ctx: interactions.SlashContext,
-    search: str,
-    max_games: int = 10,
-    max_videos: int = 1
-):
+# NOTE: For some versions of interactions.py, you must register options manually for them to show in Discord's UI.
+async def findscripts(ctx: interactions.SlashContext):
+    search = ctx.kwargs.get("search")
+    max_games = ctx.kwargs.get("max_games", 10)
+    max_videos = ctx.kwargs.get("max_videos", 1)
     apis = []
     if youtube:
         apis.append("YouTube Data API")
