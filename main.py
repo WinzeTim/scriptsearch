@@ -1,24 +1,30 @@
 import discord
 import aiohttp
-import asyncio
 import os
+import threading
+from flask import Flask
 from googleapiclient.discovery import build
 
-# ====== ENVIRONMENT VARIABLES FROM RENDER ======
+# ====== ENVIRONMENT VARIABLES ======
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
 YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")
 YOUTUBE_MAX_RESULTS = 1
 ROBLOX_MIN_PLAYERS = 5000
 
-# ====== DISCORD SETUP ======
+# ====== FLASK WEB SERVER (REQUIRED FOR RENDER FREE TIER) ======
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "✅ Roblox Script Bot is running."
+
+# ====== DISCORD BOT SETUP ======
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
-
-# ====== YOUTUBE SETUP ======
 youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
 
-# ====== FETCH POPULAR GAMES USING ROPROXY ======
+# ====== FETCH POPULAR GAMES FROM ROPROXY ======
 async def fetch_popular_roblox_games(min_players=ROBLOX_MIN_PLAYERS):
     url = "https://games.roproxy.com/v1/games/list?sortOrder=Asc&sortType=Popular&limit=20"
     games = []
@@ -36,7 +42,7 @@ async def fetch_popular_roblox_games(min_players=ROBLOX_MIN_PLAYERS):
                     games.append((name, playing))
     return games[:5]
 
-# ====== SEARCH YOUTUBE ======
+# ====== SEARCH YOUTUBE FOR SCRIPT VIDEOS ======
 def search_youtube_script(game_name):
     query = f"{game_name} script"
     request = youtube.search().list(
@@ -54,7 +60,7 @@ def search_youtube_script(game_name):
         results.append((title, url))
     return results
 
-# ====== DISCORD COMMAND HANDLER ======
+# ====== DISCORD COMMAND ======
 @client.event
 async def on_ready():
     print(f"✅ Logged in as {client.user}")
@@ -83,8 +89,13 @@ async def on_message(message):
 
         await message.channel.send(result_text)
 
-# ====== RUN BOT ======
-if DISCORD_TOKEN:
+# ====== RUN BOTH WEB SERVER + DISCORD BOT ======
+def run_discord_bot():
     client.run(DISCORD_TOKEN)
-else:
-    print("❌ DISCORD_TOKEN not found in environment variables.")
+
+if __name__ == "__main__":
+    if DISCORD_TOKEN and YOUTUBE_API_KEY:
+        threading.Thread(target=run_discord_bot).start()
+        app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+    else:
+        print("❌ DISCORD_TOKEN or YOUTUBE_API_KEY not set.")
